@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lam's Portfolio</title>
+    <style>
+        /* 基础样式 */
+        :root {
+            --bg: #0f0f11;
+            --panel: #17181c;
+            --panel-2: #1e2026;
+            --text: #e9eef5;
+            --muted: #a7b0bf;
+            --brand: #53a8ff;
+            --brand-2: #2d7dd2;
+            --danger: #ff5d5d;
+            --ok: #27c093;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        }
+        .container {
+            max-width: 1080px;
+            margin: 0 auto;
+            padding: 24px 16px 56px;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+        .muted { color: var(--muted); }
+
+        /* 控制区 */
+        .controls {
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid #2a2d35;
+            border-radius: 12px;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .btn {
+            background: var(--brand);
+            color: white;
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            cursor: pointer;
+        }
+        .btn.secondary {
+            background: #2f343d;
+            color: var(--text);
+        }
+        .btn.danger { background: var(--danger); }
+        input[type="text"] {
+            flex: 1 1 280px;
+            min-width: 220px;
+            background: #0f1115;
+            color: var(--text);
+            border: 1px solid #2a2d35;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+        .dropzone {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border: 1px dashed #3a3f49;
+            border-radius: 12px;
+            padding: 18px;
+            color: var(--muted);
+            background: #111318;
+        }
+        .dropzone.dragover { border-color: var(--brand); color: var(--text); }
+        .hint { font-size: 12px; color: var(--muted); }
+
+        /* 画廊 */
+        .grid {
+            margin-top: 18px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 14px;
+        }
+        .card {
+            background: #0f1115;
+            border: 1px solid #2a2d35;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .thumb {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+            background: #0b0c10;
+        }
+        .card-body {
+            padding: 10px;
+            display: grid;
+            gap: 8px;
+        }
+        .title-input, .caption-input {
+            width: 100%;
+            background: #0f1115;
+            color: var(--text);
+            border: 1px solid #2a2d35;
+            border-radius: 8px;
+            padding: 8px 10px;
+        }
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+        .empty {
+            text-align: center;
+            color: var(--muted);
+            padding: 24px 0;
+        }
+
+        @media (min-width: 720px) {
+            .controls { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lam's Portfolio</h1>
+            <div class="muted">可上传/拖拽/URL 插入图片，自动本地保存</div>
+        </header>
+
+        <section class="controls">
+            <div class="row">
+                <input id="fileInput" type="file" accept="image/*" multiple>
+                <button class="btn secondary" id="selectBtn">选择图片</button>
+                <button class="btn danger" id="clearAllBtn">清空所有</button>
+            </div>
+
+            <div id="dropzone" class="dropzone">把图片拖拽到这里，或点击右侧按钮选择
+            </div>
+
+            <div class="row">
+                <input id="urlInput" type="text" placeholder="粘贴图片 URL（https://...）">
+                <button class="btn" id="addUrlBtn">通过 URL 添加</button>
+            </div>
+
+            <div class="hint">提示：数据保存在本机浏览器的 localStorage，适合小图与展示用途。</div>
+        </section>
+
+        <section id="gallery" class="grid"></section>
+        <div id="emptyHint" class="empty" style="display:none;">暂无图片，请上传或通过 URL 添加。</div>
+    </div>
+
+    <script>
+        (function () {
+            /**
+             * 数据结构：
+             * {
+             *   id: string,
+             *   dataUrl: string, // base64 或外链 URL
+             *   title: string,
+             *   caption: string
+             * }
+             */
+            const STORAGE_KEY = 'lam-portfolio-items-v1';
+
+            /** @type {Array<{id:string,dataUrl:string,title:string,caption:string}>} */
+            let items = [];
+
+            const fileInput = document.getElementById('fileInput');
+            const selectBtn = document.getElementById('selectBtn');
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            const dropzone = document.getElementById('dropzone');
+            const urlInput = document.getElementById('urlInput');
+            const addUrlBtn = document.getElementById('addUrlBtn');
+            const gallery = document.getElementById('gallery');
+            const emptyHint = document.getElementById('emptyHint');
+
+            function persist() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+                } catch (err) {
+                    alert('保存到本地失败，可能超过浏览器存储限制。');
+                }
+            }
+
+            function restore() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (!raw) return [];
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) return parsed;
+                    return [];
+                } catch {
+                    return [];
+                }
+            }
+
+            function uid() {
+                return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+            }
+
+            function setEmptyState() {
+                emptyHint.style.display = items.length === 0 ? 'block' : 'none';
+            }
+
+            function render() {
+                gallery.innerHTML = '';
+                for (const it of items) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+
+                    const img = document.createElement('img');
+                    img.className = 'thumb';
+                    img.src = it.dataUrl;
+                    img.alt = it.title || 'image';
+
+                    const body = document.createElement('div');
+                    body.className = 'card-body';
+
+                    const titleInput = document.createElement('input');
+                    titleInput.className = 'title-input';
+                    titleInput.placeholder = '标题';
+                    titleInput.value = it.title || '';
+                    titleInput.addEventListener('input', () => {
+                        it.title = titleInput.value;
+                        persist();
+                    });
+
+                    const captionInput = document.createElement('textarea');
+                    captionInput.className = 'caption-input';
+                    captionInput.placeholder = '说明/描述';
+                    captionInput.rows = 2;
+                    captionInput.value = it.caption || '';
+                    captionInput.addEventListener('input', () => {
+                        it.caption = captionInput.value;
+                        persist();
+                    });
+
+                    const actions = document.createElement('div');
+                    actions.className = 'actions';
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'btn danger';
+                    removeBtn.textContent = '删除';
+                    removeBtn.addEventListener('click', () => {
+                        items = items.filter(x => x.id !== it.id);
+                        persist();
+                        render();
+                        setEmptyState();
+                    });
+
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'btn secondary';
+                    downloadBtn.textContent = '下载';
+                    downloadBtn.addEventListener('click', () => {
+                        const a = document.createElement('a');
+                        a.href = it.dataUrl;
+                        a.download = (it.title || 'image') + '.png';
+                        a.click();
+                    });
+
+                    actions.appendChild(downloadBtn);
+                    actions.appendChild(removeBtn);
+
+                    body.appendChild(titleInput);
+                    body.appendChild(captionInput);
+                    body.appendChild(actions);
+
+                    card.appendChild(img);
+                    card.appendChild(body);
+                    gallery.appendChild(card);
+                }
+                setEmptyState();
+            }
+
+            function fileListToArray(fileList) {
+                const arr = [];
+                for (let i = 0; i < fileList.length; i++) arr.push(fileList[i]);
+                return arr;
+            }
+
+            function readFileAsDataUrl(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(String(reader.result));
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            async function handleFiles(files) {
+                const arr = fileListToArray(files).filter(f => f.type.startsWith('image/'));
+                for (const f of arr) {
+                    const dataUrl = await readFileAsDataUrl(f);
+                    items.unshift({ id: uid(), dataUrl, title: f.name.replace(/\.[^.]+$/, ''), caption: '' });
+                }
+                persist();
+                render();
+            }
+
+            function addUrl(url) {
+                try {
+                    const u = new URL(url);
+                    if (!/^https?:/.test(u.protocol)) throw new Error('invalid');
+                    items.unshift({ id: uid(), dataUrl: u.toString(), title: u.pathname.split('/').pop() || '图片', caption: '' });
+                    persist();
+                    render();
+                    urlInput.value = '';
+                } catch {
+                    alert('请输入有效的图片 URL');
+                }
+            }
+
+            // 事件绑定
+            selectBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                if (e.target && e.target.files) handleFiles(e.target.files);
+            });
+            clearAllBtn.addEventListener('click', () => {
+                if (confirm('确定要清空所有图片吗？此操作不可恢复。')) {
+                    items = [];
+                    persist();
+                    render();
+                }
+            });
+
+            ;['dragenter','dragover'].forEach(evt => {
+                dropzone.addEventListener(evt, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropzone.classList.add('dragover');
+                });
+            });
+            ;['dragleave','drop'].forEach(evt => {
+                dropzone.addEventListener(evt, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropzone.classList.remove('dragover');
+                });
+            });
+            dropzone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt && dt.files) handleFiles(dt.files);
+            });
+
+            addUrlBtn.addEventListener('click', () => addUrl(urlInput.value.trim()));
+            urlInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') addUrl(urlInput.value.trim());
+            });
+
+            // 初始化
+            items = restore();
+            render();
+        })();
+    </script>
+</body>
+</html>
